@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Визначник пози йоги</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            margin: 20px;
+            background-color: #f8f8f8;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #007bff;
+            margin-bottom: 20px;
+        }
+
+        #imageUpload {
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #fff;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #previewImage {
+            max-width: 300px;
+            max-height: 300px;
+            border: 1px solid #ddd;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            object-fit: contain;
+            position: relative;
+        }
+
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-icon {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #loading-text {
+            color: white;
+        }
+
+        #predictButton {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.3s ease;
+        }
+
+        #predictButton:hover {
+            background-color: #0056b3;
+        }
+
+        #result-container {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        #result-label { /* Стиль для "Тип пози:" */
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        #result {
+            font-size: 1.2em;
+            text-align: center;
+        }
+
+        #probability-container { /* Контейнер для розгортання */
+          margin-top: 10px;
+          border: 1px solid #ddd;
+          border-radius: 5px;
+          overflow: hidden; /* Приховуємо вміст, що виходить за межі */
+          max-height: 0; /* Початкова висота - 0 */
+          transition: max-height 0.3s ease-out; /* Анімація розгортання */
+          background-color: white;
+          box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        #probability-container.expanded { /* Клас для розгорнутого стану */
+            max-height: 200px; /* Максимальна висота (можна змінити) */
+            padding: 10px;
+        }
+
+        #probability-list {
+            list-style-type: none; /* Видаляємо маркери списку */
+            padding: 0;
+            margin: 0;
+        }
+
+        #probability-list li {
+            margin-bottom: 5px;
+            text-align: left;
+        }
+
+        #toggle-probabilities {
+            cursor: pointer;
+            margin-top: 5px;
+            text-decoration: underline; /* Додаємо підкреслення */
+            color: #007bff; /* Синій колір */
+        }
+
+    </style>
+</head>
+<body>
+    <h1>Визначник пози йоги</h1>
+    <input type="file" id="imageUpload" accept="image/*">
+    <img id="previewImage" src="#" alt="Попередній перегляд зображення">
+    <div id="loading-overlay">
+        <div class="loading-icon"></div>
+        <div id="loading-text">Аналіз...</div>
+    </div>
+    <button id="predictButton">Визначити позу</button>
+    <div id="result-container">
+        <div id="result-label">Тип пози:</div> <div id="result"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script>
+        // ... (JavaScript код)
+        async function loadModel() {
+      return await tf.loadLayersModel('tfjs_yoga_pose_model/model.json');
+    }
+
+    async function predict(model, image, classNames) {
+      const img = tf.browser.fromPixels(image)
+        .resizeNearestNeighbor([224, 224])
+        .toFloat()
+        .div(255.0)
+        .expandDims();
+
+      tf.print(img); // Для налагодження (можна видалити)
+
+      const predictions = await model.predict(img).data();
+      const classIndex = predictions.indexOf(Math.max(...predictions));
+
+      if (classIndex >= 0 && classIndex < classNames.length) {
+        return classNames[classIndex];
+      } else {
+        console.error("Некоректний індекс класу:", classIndex);
+        return "Помилка передбачення";
+      }
+    }
+
+    window.onload = async function() {
+      const model = await loadModel();
+      let classNames;
+
+      try {
+        const response = await fetch('tfjs_yoga_pose_model/model_config.json');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const config = await response.json();
+        classNames = config.class_names;
+      } catch (error) {
+        console.error("Помилка завантаження model_config.json:", error);
+        classNames = [  'adho mukha svanasana',
+        'adho mukha vriksasana',
+        'agnistambhasana',
+        'ananda balasana',
+        'anantasana',
+        'anjaneyasana',
+        'ardha bhekasana',
+        'ardha chandrasana',
+        'ardha matsyendrasana',
+        'ardha pincha mayurasana',
+        'ardha uttanasana',
+        'ashtanga namaskara',
+        'astavakrasana',
+        'baddha konasana',
+        'bakasana',
+        'balasana',
+        'bhairavasana',
+        'bharadvajasana i',
+        'bhekasana',
+        'bhujangasana',
+        'bhujapidasana',
+        'bitilasana',
+        'camatkarasana',
+        'chakravakasana',
+        'chaturanga dandasana',
+        'dandasana',
+        'dhanurasana',
+        'durvasasana',
+        'dwi pada viparita dandasana',
+        'eka pada koundinyanasana i',
+        'eka pada koundinyanasana ii',
+        'eka pada rajakapotasana',
+        'eka pada rajakapotasana ii',
+        'ganda bherundasana',
+        'garbha pindasana',
+        'garudasana',
+        'gomukhasana',
+        'halasana',
+        'hanumanasana',
+        'janu sirsasana',
+        'kapotasana',
+        'krounchasana',
+        'kurmasana',
+        'lolasana',
+        'makara adho mukha svanasana',
+        'makarasana',
+        'malasana',
+        'marichyasana i',
+        'marichyasana iii',
+        'marjaryasana',
+        'matsyasana',
+        'mayurasana',
+        'natarajasana',
+        'padangusthasana',
+        'padmasana',
+        'parighasana',
+        'paripurna navasana',
+        'parivrtta janu sirsasana',
+        'parivrtta parsvakonasana',
+        'parivrtta trikonasana',
+        'parsva bakasana',
+        'parsvottanasana',
+        'pasasana',
+        'paschimottanasana',
+        'phalakasana',
+        'pincha mayurasana',
+        'prasarita padottanasana',
+        'purvottanasana',
+        'salabhasana',
+        'salamba bhujangasana',
+        'salamba sarvangasana',
+        'salamba sirsasana',
+        'savasana',
+        'setu bandha sarvangasana',
+        'simhasana',
+        'sukhasana',
+        'supta baddha konasana',
+        'supta matsyendrasana',
+        'supta padangusthasana',
+        'supta virasana',
+        'tadasana',
+        'tittibhasana',
+        'tolasana',
+        'tulasana',
+        'upavistha konasana',
+        'urdhva dhanurasana',
+        'urdhva hastasana',
+        'urdhva mukha svanasana',
+        'urdhva prasarita eka padasana',
+        'ustrasana',
+        'utkatasana',
+        'uttana shishosana',
+        'uttanasana',
+        'utthita ashwa sanchalanasana',
+        'utthita hasta padangustasana',
+        'utthita parsvakonasana',
+        'utthita trikonasana',
+        'vajrasana',
+        'vasisthasana',
+        'viparita karani',
+        'virabhadrasana i',
+        'virabhadrasana ii',
+        'virabhadrasana iii',
+        'virasana',
+        'vriksasana',
+        'vrischikasana',
+        'yoganidrasana'
+      ];
+      }
+
+      const imageUpload = document.getElementById('imageUpload');
+      const previewImage = document.getElementById('previewImage');
+      const predictButton = document.getElementById('predictButton');
+      const resultDiv = document.getElementById('result');
+      const loadingOverlay = document.getElementById('loading-overlay');
+        const resultContainer = document.getElementById('result-container');
+
+
+      imageUpload.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          const reader = new FileReader();
+          reader.onload = (e) => previewImage.src = e.target.result;
+          reader.readAsDataURL(e.target.files[0]);
+        }
+      });
+
+      predictButton.addEventListener('click', () => {
+        if (previewImage.src) {
+          loadingOverlay.style.display = 'flex'; // Показуємо оверлей
+          resultDiv.textContent = "";
+
+          const img = new Image();
+          img.onload = async () => {
+            const result = await predict(model, img, classNames);
+            resultDiv.textContent = result;
+              resultContainer.style.display = 'block'; // Показуємо контейнер результату
+            loadingOverlay.style.display = 'none'; // Приховуємо оверлей
+          };
+          img.onerror = () => {
+              resultDiv.textContent = "Помилка завантаження зображення.";
+              loadingOverlay.style.display = 'none';
+          };
+          img.src = previewImage.src;
+        } else {
+          resultDiv.textContent = "Будь ласка, завантажте зображення.";
+        }
+      });
+    };
+    </script>
+</body>
+</html>
